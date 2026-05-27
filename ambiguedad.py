@@ -9,8 +9,8 @@
 #                          hay ambigüedad estructural.
 # ============================================================
 
-from parser_cfg import Nodo
-from lexico_dcg  import lexico_dcg
+from parser import Nodo
+from lexico  import lexico_dcg
 
 # ── Patrones de ambigüedad ────────────────────────────────────
 # "sin tomate y lechuga" → dos lecturas posibles:

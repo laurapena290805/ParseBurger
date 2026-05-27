@@ -1,0 +1,231 @@
+# ============================================================
+#  ParseBurger — Módulo 6: ATN — Mesero Virtual
+#  Clase 8 — "ATN de diálogo"
+#
+#  Arquitectura siguiendo los ejemplos de la profesora (ATN.py):
+#    - Tabla de transiciones como diccionario separado
+#    - Subredes explícitas por estado (como red_np, red_vp, red_s)
+#    - Motor de transición separado de la lógica de cada estado
+#
+#  Estados:
+#    INICIO      → saludo + menú
+#    ESCUCHANDO  → recibe y analiza el pedido
+#    AMBIGUO     → espera resolución A o B
+#    CONFIRMANDO → muestra resumen, espera confirmación
+#    FIN         → pedido cerrado
+# ============================================================
+
+from gramatica   import grammar
+from parser      import parse, parse_todos
+from lexico      import dcg_parse_pedido
+from ambiguedad import detectar_ambiguedad, pcfg_score, mejor_arbol_pcfg
+from tokenizador     import tokenizar
+
+# ── Tabla de transiciones ─────────────────────────────────────
+# El diagrama de estados en código — igual a dialogo_atn en ATN.py
+
+DIALOGO_ATN = {
+    "INICIO":      {"inicio":              "ESCUCHANDO"},
+    "ESCUCHANDO":  {"pedido_valido":        "CONFIRMANDO",
+                    "pedido_ambiguo":       "AMBIGUO",
+                    "entrada_invalida":     "ESCUCHANDO",
+                    "error_concordancia":   "ESCUCHANDO",
+                    "no_reconocido":        "ESCUCHANDO"},
+    "AMBIGUO":     {"resolucion_a":         "CONFIRMANDO",
+                    "resolucion_b":         "CONFIRMANDO",
+                    "invalido":             "AMBIGUO"},
+    "CONFIRMANDO": {"confirmar":            "FIN",
+                    "cancelar":             "ESCUCHANDO"},
+    "FIN":         {}
+}
+
+
+class ATNMesero:
+    """
+    ATN del mesero virtual.
+
+    Subredes (análogo a red_np, red_vp, red_s del archivo ATN.py):
+      _subred_inicio()       → saluda y muestra el menú
+      _subred_escuchando()   → analiza el pedido (CFG + DCG)
+      _subred_ambiguo()      → resuelve la ambigüedad
+      _subred_confirmando()  → confirma o cancela
+    """
+
+    MENU = """
+╔══════════════════════════════════════════════╗
+║         🍔  MENÚ PARSEBURGER  🍔             ║
+╠══════════════════════════════════════════════╣
+║  HAMBURGUESAS                                ║
+║  · Clásica     ......................... $8  ║
+║  · Doble       ........................$11  ║
+║  · Especial    ........................$12  ║
+║  · Vegana      ........................$10  ║
+╠══════════════════════════════════════════════╣
+║  MODIFICADORES   sin · con · extra           ║
+║  INGREDIENTES    cebolla · queso · tomate    ║
+║                  lechuga · pepinillo         ║
+║                  mayonesa · mostaza · ketchup║
+║                  carne · tocino              ║
+╚══════════════════════════════════════════════╝"""
+
+    def __init__(self):
+        self.estado             = "INICIO"
+        self.pedido_actual      = None
+        self.patron_ambiguo     = None
+        self.args_ambiguos      = []
+        self._tokens_pendientes = []
+        self.historial          = []
+
+    # ── Motor de transición ───────────────────────────────────
+
+    def transicion(self, entrada_usuario):
+        """
+        Función de transición de la ATN.
+        Recibe texto → cambia estado → devuelve respuesta del mesero.
+        """
+        entrada = entrada_usuario.strip().lower()
+        self.historial.append(("usuario", entrada_usuario))
+
+        if   self.estado == "INICIO":
+            respuesta = self._subred_inicio()
+        elif self.estado == "ESCUCHANDO":
+            respuesta = self._subred_escuchando(entrada)
+        elif self.estado == "AMBIGUO":
+            respuesta = self._subred_ambiguo(entrada)
+        elif self.estado == "CONFIRMANDO":
+            respuesta = self._subred_confirmando(entrada)
+        elif self.estado == "FIN":
+            respuesta = "El pedido ya fue procesado. ¡Hasta pronto!"
+        else:
+            respuesta = "Estado no reconocido."
+
+        self.historial.append(("mesero", respuesta))
+        return respuesta
+
+    # ── Subredes ──────────────────────────────────────────────
+
+    def _subred_inicio(self):
+        """INICIO → ESCUCHANDO. Muestra el menú."""
+        self.estado = "ESCUCHANDO"
+        return "¡Bienvenido a ParseBurger! 🍔\n" + self.MENU + "\n\n¿Qué desea ordenar?"
+
+    def _subred_escuchando(self, entrada):
+        """
+        Subred principal — analiza la entrada con CFG + DCG.
+
+        Arcos de salida:
+          entrada_invalida    → error, queda en ESCUCHANDO
+          pedido_ambiguo      → pide A/B, pasa a AMBIGUO
+          error_concordancia  → avisa, queda en ESCUCHANDO
+          pedido_valido       → pasa a CONFIRMANDO
+          no_reconocido       → pide reformulación, queda en ESCUCHANDO
+        """
+        tokens = tokenizar(entrada)
+
+        # Arco 1 — Entrada inválida (ítem fuera del menú)
+        arbol_inv, pos_inv = parse("ENTRADA_INVALIDA", tokens, 0, grammar)
+        if arbol_inv is not None and pos_inv == len(tokens):
+            return (
+                "Lo siento, mi vocabulario solo me permite procesar pedidos "
+                "de nuestro menú de hamburguesas.\n"
+                "¿Qué te gustaría ordenar de nuestro catálogo?"
+            )
+
+        # Arco 2 — Ambigüedad léxica por patrón "sin X y Y"
+        patron, args = detectar_ambiguedad(tokens)
+        if patron is not None:
+            self.patron_ambiguo     = patron
+            self.args_ambiguos      = args
+            self._tokens_pendientes = tokens
+            self.estado = "AMBIGUO"
+            return patron["mensaje"].format(*args)
+
+        # Arco 3 — CFG: todos los árboles posibles
+        todos   = parse_todos("PEDIDO", tokens, 0, grammar)
+        validos = [(n, p) for n, p in todos if p == len(tokens)]
+
+        if len(validos) > 1:
+            mejor = mejor_arbol_pcfg(validos)
+            self.pedido_actual = dcg_parse_pedido(tokens) or {}
+            self.estado = "CONFIRMANDO"
+            return (
+                f"Detecté {len(validos)} interpretaciones posibles.\n"
+                f"Asumo la más probable (PCFG score={pcfg_score(mejor[0]):.4f}):\n"
+                f"{self._resumen_pedido()}\n"
+                "¿Es correcto? (sí / no)"
+            )
+
+        if len(validos) == 0:
+            return (
+                "No pude interpretar tu pedido.\n"
+                "Usa la forma: '[quiero/dame] [cantidad] [producto] [sin/con ingrediente]*'\n"
+                "Ejemplo: 'quiero dos hamburguesas sin cebolla con queso'\n"
+                "¿Deseas intentarlo de nuevo?"
+            )
+
+        # Arco 4 — DCG: verificar concordancia
+        resultado_dcg = dcg_parse_pedido(tokens)
+        if resultado_dcg is None:
+            return (
+                "Hay un problema de concordancia en tu pedido.\n"
+                "Ejemplo incorrecto: 'un hamburguesas' o 'una doble'.\n"
+                "¿Podrías reformularlo?"
+            )
+
+        self.pedido_actual = resultado_dcg
+        self.estado = "CONFIRMANDO"
+        return f"Pedido registrado:\n{self._resumen_pedido()}\n¿Desea confirmar su orden? (sí / no)"
+
+    def _subred_ambiguo(self, entrada):
+        """
+        AMBIGUO — espera que el usuario elija A o B.
+        Arcos: resolucion_a / resolucion_b → CONFIRMANDO
+               invalido (bucle) → AMBIGUO
+        """
+        if entrada in ("a", "b"):
+            idx  = 0 if entrada == "a" else 1
+            mods = self.patron_ambiguo["interpretaciones"][idx](*self.args_ambiguos)
+            resultado_dcg = dcg_parse_pedido(self._tokens_pendientes) or {}
+            resultado_dcg["modificadores"] = mods
+            self.pedido_actual = resultado_dcg
+            self.estado = "CONFIRMANDO"
+            return (
+                f"Entendido, opción {entrada.upper()}.\n"
+                f"Pedido registrado:\n{self._resumen_pedido()}\n"
+                "¿Desea confirmar su orden? (sí / no)"
+            )
+        return "Por favor responde A o B para resolver la ambigüedad."
+
+    def _subred_confirmando(self, entrada):
+        """
+        CONFIRMANDO — espera sí o no.
+        Arcos: confirmar → FIN  |  cancelar → ESCUCHANDO
+        """
+        if entrada in ("si", "sí", "s", "yes", "confirmar"):
+            self.estado = "FIN"
+            return (
+                "✅ ¡Pedido confirmado!\n"
+                f"{self._resumen_pedido()}\n"
+                "Tu pedido está en preparación. ¡Que lo disfrutes! 🍔"
+            )
+        elif entrada in ("no", "cancelar", "n"):
+            self.estado        = "ESCUCHANDO"
+            self.pedido_actual = None
+            return "Pedido cancelado. ¿Deseas ordenar otra cosa?"
+
+        return "Por favor responde 'sí' para confirmar o 'no' para cancelar."
+
+    # ── Helper: resumen del pedido ────────────────────────────
+
+    def _resumen_pedido(self):
+        if not self.pedido_actual:
+            return "(sin pedido)"
+        p        = self.pedido_actual
+        cant     = p.get("cantidad_token", "?")
+        prod     = p.get("producto", "?")
+        mods     = p.get("modificadores", [])
+        simbolo  = {"NEG": "-", "POS": "+", "EXTRA": "x2"}
+        mods_str = ", ".join(
+            f"{simbolo.get(m['tipo'], '?')}{m['ing']}" for m in mods
+        ) if mods else "sin modificaciones"
+        return f"  {cant} {prod}. Modificaciones: {mods_str}."
