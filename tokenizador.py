@@ -15,6 +15,8 @@ NORMALIZACIONES = {
 
 IGNORAR = {"pedir", "favor", "por", "me", "por_favor"}
 
+# Mapa de caracteres con tilde → sin tilde
+_TILDES = str.maketrans("áéíóúÁÉÍÓÚüÜñÑ", "aeiouAEIOUuUnN")
 
 def tokenizar(texto):
     """
@@ -31,6 +33,9 @@ def tokenizar(texto):
         for var in variantes:
             if var in texto:
                 texto = texto.replace(var, token_norm)
+
+    # Normalizar caracteres con tilde
+    texto = texto.translate(_TILDES)
 
     # Filtrar palabras irrelevantes
     tokens = [t for t in texto.split() if t not in IGNORAR]

@@ -32,15 +32,22 @@ grammar = {
     # PRODUCTO acepta tipo suelto o "hamburguesa + adjetivo"
     "PRODUCTO": [
         ["TIPO_BURGER"],
-        ["hamburguesa", "ADJETIVO_BURGER"]
+        ["hamburguesa", "ADJETIVO_BURGER"],
+        ["hamburguesas", "ADJETIVO_BURGER"]
     ],
     "ADJETIVO_BURGER": [
-        ["clasica"], ["doble"], ["especial"], ["vegana"]
+        ["clasica"], ["clasicas"],
+        ["doble"], ["dobles"],
+        ["especial"], ["especiales"],
+        ["vegana"], ["veganas"]
     ],
 
     "TIPO_BURGER": [
         ["hamburguesa"], ["hamburguesas"],
-        ["clasica"], ["doble"], ["especial"], ["vegana"]
+        ["clasica"], ["clasicas"],
+        ["doble"], ["dobles"], 
+        ["especial"], ["especiales"], 
+        ["vegana"], ["veganas"]
     ],
 
     # MOD_LIST — sin recursión izquierda.
@@ -74,7 +81,7 @@ grammar = {
     "CONJ":    [["y"]],
 
     "INGREDIENTE": [
-        ["cebolla"], ["queso"], ["tomate"], ["lechuga"],
+        ["cebolla"], ["queso"], ["tomate"], ["lechuga"], ["salsa"],
         ["pepinillo"], ["mayonesa"], ["mostaza"],
         ["ketchup"], ["carne"], ["tocino"]
     ],

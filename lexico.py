@@ -20,9 +20,13 @@ lexico_dcg = {
     "hamburguesa":  {"cat": "TIPO_BURGER", "num": "sg", "gen": "fem"},
     "hamburguesas": {"cat": "TIPO_BURGER", "num": "pl", "gen": "fem"},
     "clasica":      {"cat": "TIPO_BURGER", "num": "sg", "gen": "fem"},
+    "clasicas":     {"cat": "TIPO_BURGER", "num": "pl", "gen": "fem"},
     "doble":        {"cat": "TIPO_BURGER", "num": "sg", "gen": "masc"},
-    "especial":     {"cat": "TIPO_BURGER", "num": "sg", "gen": "neu"},   # invariable
+    "dobles":       {"cat": "TIPO_BURGER", "num": "pl", "gen": "masc"},
+    "especial":     {"cat": "TIPO_BURGER", "num": "sg", "gen": "neu"},
+    "especiales":    {"cat": "TIPO_BURGER", "num": "pl", "gen": "neu"},
     "vegana":       {"cat": "TIPO_BURGER", "num": "sg", "gen": "fem"},
+    "veganas":      {"cat": "TIPO_BURGER", "num": "pl", "gen": "fem"},
 
     # Modificadores
     "sin":      {"cat": "NEG"},
@@ -47,8 +51,7 @@ lexico_dcg = {
     "tocino":    {"cat": "INGREDIENTE"},
 }
 
-# Tabla de concordancia de género 
-
+# Tabla de concordancia de género
 CONCORDANCIA_GEN = {
     ("masc", "masc"): True,
     ("fem",  "fem"):  True,
@@ -63,7 +66,6 @@ CONCORDANCIA_GEN = {
 
 
 # Algoritmo de unificación
-
 def unificar(dag1, dag2):
     """
     Combina dos DAGs de rasgos.
@@ -85,7 +87,6 @@ def unificar(dag1, dag2):
 
 
 # Parser DCG
-
 def dcg_parse_pedido(tokens):
     """
     Verifica concordancia de género/número entre CANTIDAD y PRODUCTO
@@ -114,38 +115,48 @@ def dcg_parse_pedido(tokens):
     resultado["cantidad_rasgos"] = w_cant
     pos += 1
 
-    # 3. Producto — simple o compuesto ("hamburguesa clasica")
+    # 3. Producto — simple o compuesto ("hamburguesa clasica" / "hamburguesas clasica")
     if pos >= len(tokens):
         return None
     w_prod = lexico_dcg.get(tokens[pos])
     if not w_prod or w_prod["cat"] != "TIPO_BURGER":
         return None
 
-    ADJETIVOS_BURGER = {"clasica", "doble", "especial", "vegana"}
+    ADJETIVOS_BURGER = {"clasica", "doble", "especial", "vegana", "clasicas", "dobles", "especiales", "veganas"}
     nombre_producto  = tokens[pos]
 
-    if (tokens[pos] == "hamburguesa"
+    # "in" para comparar contra los dos tokens válidos — antes decía == (tupla) lo cual nunca es True
+    if (tokens[pos] in ("hamburguesa", "hamburguesas")
             and pos + 1 < len(tokens)
             and tokens[pos + 1] in ADJETIVOS_BURGER):
         pos += 1
         nombre_producto = f"hamburguesa {tokens[pos]}"
+        # Los rasgos del producto pasan a ser los del adjetivo (clasica, doble, etc.)
         w_prod = lexico_dcg.get(tokens[pos], w_prod)
 
-    # UNIFICACIÓN: concordancia de género y número
-    gen_cant = w_cant["gen"]
-    gen_prod = w_prod["gen"]
+    pos += 1
+
+    # CONCORDANCIA: primero número, luego género via CONCORDANCIA_GEN
+    # La unificación directa no basta aquí porque "dos" (neu) y "clasica" (fem)
+    # tienen num distintos (pl vs sg) — eso se verifica explícitamente.
     num_cant = w_cant["num"]
     num_prod = w_prod["num"]
-
-    if num_cant == "sg" and num_prod == "pl":
-        return None    # "un hamburguesas" ✗
+    gen_cant = w_cant["gen"]
+    gen_prod = w_prod["gen"]
 
     if not CONCORDANCIA_GEN.get((gen_cant, gen_prod), True):
-        return None    # conflicto de género ✗
-
+        return None  # "un hamburguesa" ✗, "una doble" ✗
+ 
+    # Paso 2: número via unificar()
+    #   Aquí aplicamos unificación directa sobre los rasgos de número.
+    #   Extraemos solo num de cada DAG para no dejar que gen cause falso conflicto.
+    rasgos_num_cant = {"num": w_cant["num"]}
+    rasgos_num_prod = {"num": w_prod["num"]}
+    if unificar(rasgos_num_cant, rasgos_num_prod) is None:
+        return None  # "un hamburguesas" ✗, "una clasicas" ✗
+ 
     resultado["producto"]        = nombre_producto
     resultado["producto_rasgos"] = w_prod
-    pos += 1
 
     # 4. Modificadores opcionales
     mods = []

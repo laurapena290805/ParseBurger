@@ -49,6 +49,9 @@ class ATNMesero:
       _subred_escuchando()   → analiza el pedido (CFG + DCG)
       _subred_ambiguo()      → resuelve la ambigüedad
       _subred_confirmando()  → confirma o cancela
+
+    Cada subred devuelve (arco, respuesta).
+    El motor consulta DIALOGO_ATN con ese arco para actualizar el estado.
     """
 
     MENU = """
@@ -81,33 +84,45 @@ class ATNMesero:
     def transicion(self, entrada_usuario):
         """
         Función de transición de la ATN.
-        Recibe texto → cambia estado → devuelve respuesta del mesero.
+        Recibe texto → consulta la tabla → cambia estado → devuelve respuesta.
+
+        Todas las subredes devuelven (arco, respuesta).
+        El motor usa el arco para buscar el siguiente estado en DIALOGO_ATN.
         """
         entrada = entrada_usuario.strip().lower()
         self.historial.append(("usuario", entrada_usuario))
 
-        if   self.estado == "INICIO":
-            respuesta = self._subred_inicio()
+        if self.estado == "INICIO":
+            arco, respuesta = self._subred_inicio()
         elif self.estado == "ESCUCHANDO":
-            respuesta = self._subred_escuchando(entrada)
+            arco, respuesta = self._subred_escuchando(entrada)
         elif self.estado == "AMBIGUO":
-            respuesta = self._subred_ambiguo(entrada)
+            arco, respuesta = self._subred_ambiguo(entrada)
         elif self.estado == "CONFIRMANDO":
-            respuesta = self._subred_confirmando(entrada)
+            arco, respuesta = self._subred_confirmando(entrada)
         elif self.estado == "FIN":
-            respuesta = "El pedido ya fue procesado. ¡Hasta pronto!"
+            arco, respuesta = None, "El pedido ya fue procesado. ¡Hasta pronto!"
         else:
-            respuesta = "Estado no reconocido."
+            arco, respuesta = None, "Estado no reconocido."
+
+        # ── Motor: consulta la tabla para actualizar el estado ──
+        # Esta es la línea clave: el estado NO se cambia dentro de las subredes,
+        # sino aquí, usando DIALOGO_ATN como fuente de verdad.
+        if arco and arco in DIALOGO_ATN.get(self.estado, {}):
+            self.estado = DIALOGO_ATN[self.estado][arco]
 
         self.historial.append(("mesero", respuesta))
         return respuesta
 
     # ── Subredes ──────────────────────────────────────────────
+    # Cada subred devuelve (arco, respuesta).
+    # El arco es la etiqueta del arco que se disparó (debe coincidir
+    # con las claves de DIALOGO_ATN). El motor hace la transición.
 
     def _subred_inicio(self):
-        """INICIO → ESCUCHANDO. Muestra el menú."""
-        self.estado = "ESCUCHANDO"
-        return "¡Bienvenido a ParseBurger! 🍔\n" + self.MENU + "\n\n¿Qué desea ordenar?"
+        """INICIO → devuelve arco 'inicio' para pasar a ESCUCHANDO."""
+        respuesta = "¡Bienvenido a ParseBurger! 🍔\n" + self.MENU + "\n\n¿Qué desea ordenar?"
+        return "inicio", respuesta
 
     def _subred_escuchando(self, entrada):
         """
@@ -125,7 +140,7 @@ class ATNMesero:
         # Arco 1 — Entrada inválida (ítem fuera del menú)
         arbol_inv, pos_inv = parse("ENTRADA_INVALIDA", tokens, 0, grammar)
         if arbol_inv is not None and pos_inv == len(tokens):
-            return (
+            return "entrada_invalida", (
                 "Lo siento, mi vocabulario solo me permite procesar pedidos "
                 "de nuestro menú de hamburguesas.\n"
                 "¿Qué te gustaría ordenar de nuestro catálogo?"
@@ -137,8 +152,7 @@ class ATNMesero:
             self.patron_ambiguo     = patron
             self.args_ambiguos      = args
             self._tokens_pendientes = tokens
-            self.estado = "AMBIGUO"
-            return patron["mensaje"].format(*args)
+            return "pedido_ambiguo", patron["mensaje"].format(*args)
 
         # Arco 3 — CFG: todos los árboles posibles
         todos   = parse_todos("PEDIDO", tokens, 0, grammar)
@@ -147,16 +161,16 @@ class ATNMesero:
         if len(validos) > 1:
             mejor = mejor_arbol_pcfg(validos)
             self.pedido_actual = dcg_parse_pedido(tokens) or {}
-            self.estado = "CONFIRMANDO"
-            return (
+            respuesta = (
                 f"Detecté {len(validos)} interpretaciones posibles.\n"
                 f"Asumo la más probable (PCFG score={pcfg_score(mejor[0]):.4f}):\n"
                 f"{self._resumen_pedido()}\n"
                 "¿Es correcto? (sí / no)"
             )
+            return "pedido_valido", respuesta
 
         if len(validos) == 0:
-            return (
+            return "no_reconocido", (
                 "No pude interpretar tu pedido.\n"
                 "Usa la forma: '[quiero/dame] [cantidad] [producto] [sin/con ingrediente]*'\n"
                 "Ejemplo: 'quiero dos hamburguesas sin cebolla con queso'\n"
@@ -166,15 +180,17 @@ class ATNMesero:
         # Arco 4 — DCG: verificar concordancia
         resultado_dcg = dcg_parse_pedido(tokens)
         if resultado_dcg is None:
-            return (
+            return "error_concordancia", (
                 "Hay un problema de concordancia en tu pedido.\n"
                 "Ejemplo incorrecto: 'un hamburguesas' o 'una doble'.\n"
                 "¿Podrías reformularlo?"
             )
 
         self.pedido_actual = resultado_dcg
-        self.estado = "CONFIRMANDO"
-        return f"Pedido registrado:\n{self._resumen_pedido()}\n¿Desea confirmar su orden? (sí / no)"
+        return "pedido_valido", (
+            f"Pedido registrado:\n{self._resumen_pedido()}\n"
+            "¿Desea confirmar su orden? (sí / no)"
+        )
 
     def _subred_ambiguo(self, entrada):
         """
@@ -188,13 +204,15 @@ class ATNMesero:
             resultado_dcg = dcg_parse_pedido(self._tokens_pendientes) or {}
             resultado_dcg["modificadores"] = mods
             self.pedido_actual = resultado_dcg
-            self.estado = "CONFIRMANDO"
-            return (
+            arco = "resolucion_a" if entrada == "a" else "resolucion_b"
+            respuesta = (
                 f"Entendido, opción {entrada.upper()}.\n"
                 f"Pedido registrado:\n{self._resumen_pedido()}\n"
                 "¿Desea confirmar su orden? (sí / no)"
             )
-        return "Por favor responde A o B para resolver la ambigüedad."
+            return arco, respuesta
+
+        return "invalido", "Por favor responde A o B para resolver la ambigüedad."
 
     def _subred_confirmando(self, entrada):
         """
@@ -202,18 +220,18 @@ class ATNMesero:
         Arcos: confirmar → FIN  |  cancelar → ESCUCHANDO
         """
         if entrada in ("si", "sí", "s", "yes", "confirmar"):
-            self.estado = "FIN"
-            return (
+            respuesta = (
                 "✅ ¡Pedido confirmado!\n"
                 f"{self._resumen_pedido()}\n"
                 "Tu pedido está en preparación. ¡Que lo disfrutes! 🍔"
             )
-        elif entrada in ("no", "cancelar", "n"):
-            self.estado        = "ESCUCHANDO"
-            self.pedido_actual = None
-            return "Pedido cancelado. ¿Deseas ordenar otra cosa?"
+            return "confirmar", respuesta
 
-        return "Por favor responde 'sí' para confirmar o 'no' para cancelar."
+        if entrada in ("no", "cancelar", "n"):
+            self.pedido_actual = None
+            return "cancelar", "Pedido cancelado. ¿Deseas ordenar otra cosa?"
+
+        return "invalido", "Por favor responde 'sí' para confirmar o 'no' para cancelar."
 
     # ── Helper: resumen del pedido ────────────────────────────
 
