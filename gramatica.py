@@ -13,7 +13,15 @@ grammar = {
     ],
 
     "PEDIDO": [
-        ["VERBO_PEDIR", "NP_PEDIDO"]
+        ["VERBO_PEDIR", "NP_LIST"]
+    ],
+
+    # NP_LIST permite pedir varios productos en un mismo turno:
+    # "quiero una clasica y una vegana"
+    # "quiero dos hamburguesas una clasica y otra vegana"
+    "NP_LIST": [
+        ["NP_PEDIDO", "CONJ", "NP_LIST"],
+        ["NP_PEDIDO"]
     ],
 
     "NP_PEDIDO": [
@@ -62,6 +70,10 @@ grammar = {
         ["pero",  "MOD", "MOD_LIST_TAIL"],
         ["CONJ",  "MOD"],
         ["pero",  "MOD"],
+        # Coordinación de ingredientes bajo el mismo operador:
+        # "con queso y tocino" → CONJ INGREDIENTE hereda el tipo del MOD anterior
+        ["CONJ",  "INGREDIENTE", "MOD_LIST_TAIL"],
+        ["CONJ",  "INGREDIENTE"],
         ["MOD",   "MOD_LIST_TAIL"],   # cadena implícita: "sin X sin Y"
         ["MOD"]
     ],
