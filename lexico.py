@@ -136,11 +136,11 @@ def dcg_parse_pedido(tokens):
 
     pos += 1
 
-    # CONCORDANCIA: primero número, luego género via CONCORDANCIA_GEN
-    # La unificación directa no basta aquí porque "dos" (neu) y "clasica" (fem)
-    # tienen num distintos (pl vs sg) — eso se verifica explícitamente.
-    num_cant = w_cant["num"]
-    num_prod = w_prod["num"]
+    # ── Concordancia en dos pasos ──────────────────────────────
+    #
+    # Paso 1: género via CONCORDANCIA_GEN
+    #   Necesario porque "neu" (dos/tres/cuatro) es compatible con
+    #   fem y masc, pero unificar() lo rechazaría por ser valores distintos.
     gen_cant = w_cant["gen"]
     gen_prod = w_prod["gen"]
 

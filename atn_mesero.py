@@ -106,7 +106,7 @@ class ATNMesero:
             arco, respuesta = None, "Estado no reconocido."
 
         # ── Motor: consulta la tabla para actualizar el estado ──
-        # Esta es la línea clave: el estado NO se cambia dentro de las subredes,
+        # el estado NO se cambia dentro de las subredes,
         # sino aquí, usando DIALOGO_ATN como fuente de verdad.
         if arco and arco in DIALOGO_ATN.get(self.estado, {}):
             self.estado = DIALOGO_ATN[self.estado][arco]
