@@ -65,16 +65,28 @@ def detectar_ambiguedad(tokens):
 
 PCFG_PROBS = {
     "MOD_LIST": {
-        ("MOD",):                    0.50,
-        ("MOD_LIST", "CONJ", "MOD"): 0.35,
-        ("MOD_LIST", "pero", "MOD"): 0.15,
+        ("MOD", "MOD_LIST_TAIL"): 0.60,   # "sin cebolla con queso"
+        ("MOD",):                 0.40,   # "sin cebolla"
+    },
+    "MOD_LIST_TAIL": {
+        ("CONJ",  "MOD", "MOD_LIST_TAIL"): 0.25,
+        ("pero",  "MOD", "MOD_LIST_TAIL"): 0.10,
+        ("CONJ",  "MOD"):                  0.20,
+        ("pero",  "MOD"):                  0.10,
+        ("CONJ",  "INGREDIENTE", "MOD_LIST_TAIL"): 0.10,
+        ("CONJ",  "INGREDIENTE"):           0.10,
+        ("MOD",   "MOD_LIST_TAIL"):         0.10,
+        ("MOD",):                           0.05,
     },
     "MOD": {
-        ("NEG",   "INGREDIENTE"): 0.55,
-        ("POS",   "INGREDIENTE"): 0.35,
-        ("EXTRA", "INGREDIENTE"): 0.10,
+        ("NEG",   "INGREDIENTE"):            0.45,
+        ("POS",   "INGREDIENTE"):            0.35,
+        ("EXTRA", "INGREDIENTE"):            0.05,
+        ("POS",   "EXTRA",    "INGREDIENTE"): 0.10,
+        ("POS",   "INTENSIF", "INGREDIENTE"): 0.05,
     }
 }
+ 
 
 
 def pcfg_score(arbol):

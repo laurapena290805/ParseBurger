@@ -50,6 +50,7 @@ lexico_dcg = {
     "ketchup":   {"cat": "INGREDIENTE"},
     "carne":     {"cat": "INGREDIENTE"},
     "tocino":    {"cat": "INGREDIENTE"},
+    "salsa":     {"cat": "INGREDIENTE"},
 }
 
 # Tabla de concordancia de género
@@ -139,19 +140,16 @@ def dcg_parse_pedido(tokens):
     # Paso 1: género via CONCORDANCIA_GEN
     #   Necesario porque "neu" (dos/tres/cuatro) es compatible con
     #   fem y masc, pero unificar() lo rechazaría por ser valores distintos.
-    num_cant = w_cant["num"]
-    num_prod = w_prod["num"]
     gen_cant = w_cant["gen"]
     gen_prod = w_prod["gen"]
 
     if not CONCORDANCIA_GEN.get((gen_cant, gen_prod), True):
         return None  # "un hamburguesa" ✗, "una doble" ✗
  
-    rasgos_num_cant = {"num": w_cant["num"]}
-    rasgos_num_prod = {"num": w_prod["num"]}
-    if unificar(rasgos_num_cant, rasgos_num_prod) is None:
-        return None  # "un hamburguesas" ✗, "una clasicas" ✗
- 
+
+    if unificar({"num": w_cant["num"]}, {"num": w_prod["num"]}) is None:
+        return None
+    
     resultado["producto"]        = nombre_producto
     resultado["producto_rasgos"] = w_prod
 

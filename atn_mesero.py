@@ -56,19 +56,19 @@ class ATNMesero:
 
     MENU = """
 ╔══════════════════════════════════════════════╗
-║         🍔  MENÚ PARSEBURGER  🍔             ║
+║         🍔  MENÚ PARSEBURGER  🍔            ║
 ╠══════════════════════════════════════════════╣
 ║  HAMBURGUESAS                                ║
 ║  · Clásica     ......................... $8  ║
-║  · Doble       ........................$11  ║
-║  · Especial    ........................$12  ║
-║  · Vegana      ........................$10  ║
+║  · Doble       ........................$11   ║
+║  · Especial    ........................$12   ║
+║  · Vegana      ........................$10   ║
 ╠══════════════════════════════════════════════╣
 ║  MODIFICADORES   sin · con · extra           ║
 ║  INGREDIENTES    cebolla · queso · tomate    ║
 ║                  lechuga · pepinillo         ║
 ║                  mayonesa · mostaza · ketchup║
-║                  carne · tocino              ║
+║                  carne · tocino · salsa      ║
 ╚══════════════════════════════════════════════╝"""
 
     def __init__(self):

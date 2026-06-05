@@ -13,7 +13,7 @@ NORMALIZACIONES = {
     "hotdog":         ["hot dog", "hot-dog"],
 }
 
-IGNORAR = {"pedir", "favor", "por", "me", "por_favor"}
+IGNORAR = {"pedir", "favor", "por", "me"}
 
 # Mapa de caracteres con tilde → sin tilde
 _TILDES = str.maketrans("áéíóúÁÉÍÓÚüÜñÑ", "aeiouAEIOUuUnN")
