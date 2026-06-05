@@ -17,7 +17,7 @@
 
 from gramatica   import grammar
 from parser      import parse, parse_todos
-from lexico      import dcg_parse_pedido
+from lexico      import dcg_parse_pedido, dcg_parse_lista_pedidos
 from ambiguedad import detectar_ambiguedad, pcfg_score, mejor_arbol_pcfg
 from tokenizador     import tokenizar
 
@@ -160,7 +160,7 @@ class ATNMesero:
 
         if len(validos) > 1:
             mejor = mejor_arbol_pcfg(validos)
-            self.pedido_actual = dcg_parse_pedido(tokens) or {}
+            self.pedido_actual = dcg_parse_lista_pedidos(tokens) or [{}]
             respuesta = (
                 f"Detecté {len(validos)} interpretaciones posibles.\n"
                 f"Asumo la más probable (PCFG score={pcfg_score(mejor[0]):.4f}):\n"
@@ -177,8 +177,8 @@ class ATNMesero:
                 "¿Deseas intentarlo de nuevo?"
             )
 
-        # Arco 4 — DCG: verificar concordancia
-        resultado_dcg = dcg_parse_pedido(tokens)
+        # Arco 4 — DCG: verificar concordancia (soporta múltiples productos)
+        resultado_dcg = dcg_parse_lista_pedidos(tokens)
         if resultado_dcg is None:
             return "error_concordancia", (
                 "Hay un problema de concordancia en tu pedido.\n"
@@ -201,8 +201,8 @@ class ATNMesero:
         if entrada in ("a", "b"):
             idx  = 0 if entrada == "a" else 1
             mods = self.patron_ambiguo["interpretaciones"][idx](*self.args_ambiguos)
-            resultado_dcg = dcg_parse_pedido(self._tokens_pendientes) or {}
-            resultado_dcg["modificadores"] = mods
+            resultado_dcg = dcg_parse_lista_pedidos(self._tokens_pendientes) or [{}]
+            resultado_dcg[0]["modificadores"] = mods
             self.pedido_actual = resultado_dcg
             arco = "resolucion_a" if entrada == "a" else "resolucion_b"
             respuesta = (
@@ -238,12 +238,16 @@ class ATNMesero:
     def _resumen_pedido(self):
         if not self.pedido_actual:
             return "(sin pedido)"
-        p        = self.pedido_actual
-        cant     = p.get("cantidad_token", "?")
-        prod     = p.get("producto", "?")
-        mods     = p.get("modificadores", [])
-        simbolo  = {"NEG": "-", "POS": "+", "EXTRA": "x2"}
-        mods_str = ", ".join(
-            f"{simbolo.get(m['tipo'], '?')}{m['ing']}" for m in mods
-        ) if mods else "sin modificaciones"
-        return f"  {cant} {prod}. Modificaciones: {mods_str}."
+        # pedido_actual es siempre una lista de dicts (uno por sub-pedido)
+        pedidos = self.pedido_actual if isinstance(self.pedido_actual, list) else [self.pedido_actual]
+        simbolo = {"NEG": "-", "POS": "+", "EXTRA": "x2"}
+        lineas  = []
+        for p in pedidos:
+            cant     = p.get("cantidad_token", "?")
+            prod     = p.get("producto", "?")
+            mods     = p.get("modificadores", [])
+            mods_str = ", ".join(
+                f"{simbolo.get(m['tipo'], '?')}{m['ing']}" for m in mods
+            ) if mods else "sin modificaciones"
+            lineas.append(f"  {cant} {prod}. Modificaciones: {mods_str}.")
+        return "\n".join(lineas)

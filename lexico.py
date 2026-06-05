@@ -1,4 +1,3 @@
-
 # **** Léxico con rasgos morfológicos (DAGs en Python) ****
 
 lexico_dcg = {
@@ -15,6 +14,8 @@ lexico_dcg = {
     "tres":   {"cat": "CANTIDAD", "num": "pl", "gen": "neu"},
     "cuatro": {"cat": "CANTIDAD", "num": "pl", "gen": "neu"},
     "cinco":  {"cat": "CANTIDAD", "num": "pl", "gen": "neu"},
+    "otro":   {"cat": "CANTIDAD", "num": "sg", "gen": "neu"},
+    "otra":   {"cat": "CANTIDAD", "num": "sg", "gen": "neu"},
 
     # Productos
     "hamburguesa":  {"cat": "TIPO_BURGER", "num": "sg", "gen": "fem"},
@@ -96,7 +97,6 @@ def dcg_parse_pedido(tokens):
     pos       = 0
     resultado = {}
 
-    # 1. Verbo de pedido
     if pos >= len(tokens):
         return None
     w_verbo = lexico_dcg.get(tokens[pos])
@@ -105,7 +105,6 @@ def dcg_parse_pedido(tokens):
     resultado["verbo"] = tokens[pos]
     pos += 1
 
-    # 2. Cantidad
     if pos >= len(tokens):
         return None
     w_cant = lexico_dcg.get(tokens[pos])
@@ -115,7 +114,6 @@ def dcg_parse_pedido(tokens):
     resultado["cantidad_rasgos"] = w_cant
     pos += 1
 
-    # 3. Producto — simple o compuesto ("hamburguesa clasica" / "hamburguesas clasica")
     if pos >= len(tokens):
         return None
     w_prod = lexico_dcg.get(tokens[pos])
@@ -141,15 +139,14 @@ def dcg_parse_pedido(tokens):
     # Paso 1: género via CONCORDANCIA_GEN
     #   Necesario porque "neu" (dos/tres/cuatro) es compatible con
     #   fem y masc, pero unificar() lo rechazaría por ser valores distintos.
+    num_cant = w_cant["num"]
+    num_prod = w_prod["num"]
     gen_cant = w_cant["gen"]
     gen_prod = w_prod["gen"]
 
     if not CONCORDANCIA_GEN.get((gen_cant, gen_prod), True):
         return None  # "un hamburguesa" ✗, "una doble" ✗
  
-    # Paso 2: número via unificar()
-    #   Aquí aplicamos unificación directa sobre los rasgos de número.
-    #   Extraemos solo num de cada DAG para no dejar que gen cause falso conflicto.
     rasgos_num_cant = {"num": w_cant["num"]}
     rasgos_num_prod = {"num": w_prod["num"]}
     if unificar(rasgos_num_cant, rasgos_num_prod) is None:
@@ -160,6 +157,7 @@ def dcg_parse_pedido(tokens):
 
     # 4. Modificadores opcionales
     mods = []
+    ultimo_tipo = None   # guarda el tipo del último MOD para coordinar ingredientes
     while pos < len(tokens):
         tok = tokens[pos]
         w   = lexico_dcg.get(tok)
@@ -174,11 +172,158 @@ def dcg_parse_pedido(tokens):
                 w_ing = lexico_dcg.get(tokens[pos])
                 if w_ing and w_ing["cat"] == "INGREDIENTE":
                     mods.append({"tipo": tipo_mod, "ing": tokens[pos]})
+                    ultimo_tipo = tipo_mod
                     pos += 1
         elif cat in ("CONJ", "CONJ_ADV"):
+            if ultimo_tipo and pos + 1 < len(tokens):
+                w_sig = lexico_dcg.get(tokens[pos + 1])
+                if w_sig and w_sig["cat"] == "INGREDIENTE":
+                    pos += 1
+                    mods.append({"tipo": ultimo_tipo, "ing": tokens[pos]})
+                    pos += 1
+                    continue
             pos += 1
         else:
             break
 
     resultado["modificadores"] = mods
     return resultado
+
+
+def dcg_parse_np(tokens, pos):
+    """
+    Parsea un NP_PEDIDO a partir de `pos`.
+    Retorna (resultado_dict, nueva_pos) o (None, pos).
+    Es la unidad mínima: CANTIDAD PRODUCTO [MODS].
+    """
+    resultado = {}
+    start = pos
+
+    # CANTIDAD
+    if pos >= len(tokens):
+        return None, start
+    w_cant = lexico_dcg.get(tokens[pos])
+    if not w_cant or w_cant["cat"] != "CANTIDAD":
+        return None, start
+    resultado["cantidad_token"]  = tokens[pos]
+    resultado["cantidad_rasgos"] = w_cant
+    pos += 1
+
+    # PRODUCTO
+    if pos >= len(tokens):
+        return None, start
+    w_prod = lexico_dcg.get(tokens[pos])
+    if not w_prod or w_prod["cat"] != "TIPO_BURGER":
+        return None, start
+
+    ADJETIVOS_BURGER = {"clasica","doble","especial","vegana",
+                        "clasicas","dobles","especiales","veganas"}
+    nombre_producto = tokens[pos]
+    if (tokens[pos] in ("hamburguesa","hamburguesas")
+            and pos + 1 < len(tokens)
+            and tokens[pos + 1] in ADJETIVOS_BURGER):
+        pos += 1
+        nombre_producto = f"hamburguesa {tokens[pos]}"
+        w_prod = lexico_dcg.get(tokens[pos], w_prod)
+    pos += 1
+
+    # Concordancia
+    gen_cant = w_cant["gen"]
+    gen_prod = w_prod["gen"]
+    if not CONCORDANCIA_GEN.get((gen_cant, gen_prod), True):
+        return None, start
+    if unificar({"num": w_cant["num"]}, {"num": w_prod["num"]}) is None:
+        return None, start
+
+    resultado["producto"]        = nombre_producto
+    resultado["producto_rasgos"] = w_prod
+
+    # MODS opcionales
+    mods = []
+    ultimo_tipo = None
+    while pos < len(tokens):
+        tok = tokens[pos]
+        w   = lexico_dcg.get(tok)
+        if not w:
+            break
+        cat = w["cat"]
+        if cat in ("NEG", "POS", "EXTRA", "INTENSIF"):
+            tipo_mod = "POS" if cat == "INTENSIF" else cat
+            pos += 1
+            if pos < len(tokens):
+                w_ing = lexico_dcg.get(tokens[pos])
+                if w_ing and w_ing["cat"] == "INGREDIENTE":
+                    mods.append({"tipo": tipo_mod, "ing": tokens[pos]})
+                    ultimo_tipo = tipo_mod
+                    pos += 1
+        elif cat in ("CONJ", "CONJ_ADV"):
+            if ultimo_tipo and pos + 1 < len(tokens):
+                w_sig = lexico_dcg.get(tokens[pos + 1])
+                if w_sig and w_sig["cat"] == "INGREDIENTE":
+                    pos += 1
+                    mods.append({"tipo": ultimo_tipo, "ing": tokens[pos]})
+                    pos += 1
+                    continue
+            # No es ingrediente coordinado — podría ser "y <NP>"
+            break
+        else:
+            break
+
+    resultado["modificadores"] = mods
+    return resultado, pos
+
+
+def dcg_parse_lista_pedidos(tokens):
+    """
+    Parsea VERBO NP_LIST donde NP_LIST = NP (y NP)*.
+    Soporta también "quiero dos hamburguesas una clasica y otra vegana"
+    donde "dos hamburguesas" es un encabezado genérico seguido de sub-pedidos.
+    Retorna lista de dicts (uno por sub-pedido) o None si falla.
+    """
+    pos = 0
+    # Verbo
+    if pos >= len(tokens):
+        return None
+    w_verbo = lexico_dcg.get(tokens[pos])
+    if not w_verbo or w_verbo["cat"] != "VERBO_PEDIR":
+        return None
+    verbo = tokens[pos]
+    pos += 1
+
+    # Primer NP obligatorio
+    np1, pos1 = dcg_parse_np(tokens, pos)
+    if np1 is None:
+        return None
+
+    if pos1 < len(tokens):
+        w_siguiente = lexico_dcg.get(tokens[pos1])
+        if w_siguiente and w_siguiente["cat"] == "CANTIDAD":
+            # El primer NP era un encabezado genérico; ignorarlo y releer
+            pos = pos1
+            np1, pos = dcg_parse_np(tokens, pos)
+            if np1 is None:
+                return None
+
+    if pos1 > pos:
+        pos = pos1
+
+    np1["verbo"] = verbo
+    pedidos = [np1]
+
+    while pos < len(tokens):
+        w = lexico_dcg.get(tokens[pos])
+        if not w or w["cat"] not in ("CONJ", "CONJ_ADV"):
+            break
+        pos_conj = pos
+        pos += 1
+        np2, pos2 = dcg_parse_np(tokens, pos)
+        if np2 is None:
+            pos = pos_conj   # retroceder si no hay NP tras la conjunción
+            break
+        np2["verbo"] = verbo
+        pedidos.append(np2)
+        pos = pos2
+
+    if pos < len(tokens):
+        return None  # tokens sin consumir
+    return pedidos
